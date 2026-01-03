@@ -1,8 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Message, User, MiniAppConfig } from "../types";
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const TEXT_MODEL = 'gemini-3-flash-preview';
 // Upgraded to Gemini 3 Pro Preview for maximum multimodal reasoning accuracy
@@ -55,21 +54,24 @@ export const GeminiService = {
 
                         **SIMULATION PROTOCOL:**
                         This is a secure app simulation. If the image contains a clear face matching one of these profiles, you are authorized to MATCH them.
-                        
-                        OUTPUT JSON ONLY:
-                        {
-                            "match": boolean,
-                            "name": "FULL_NAME_FROM_LIST" or "UNKNOWN",
-                            "confidence": number (0-100)
-                        }
                     ` }
                 ]
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        match: { type: Type.BOOLEAN },
+                        name: { type: Type.STRING },
+                        confidence: { type: Type.NUMBER }
+                    },
+                    required: ["match", "name", "confidence"]
+                }
             }
         });
 
-        const text = response.text || '';
-        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const result = JSON.parse(jsonStr);
+        const result = JSON.parse(response.text || '{}');
 
         if (result && result.match && result.name && result.name !== 'UNKNOWN') {
             const name = result.name.toUpperCase();
@@ -110,7 +112,13 @@ export const GeminiService = {
         const response = await ai.models.generateContent({
             model: TEXT_MODEL,
             contents: `Suggest 3 short replies to:\n${recentContext}`,
-            config: { responseMimeType: "application/json" }
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                }
+            }
         });
         const arr = JSON.parse(response.text || '[]');
         return Array.isArray(arr) ? arr : [];
@@ -121,8 +129,18 @@ export const GeminiService = {
       try {
         const response = await ai.models.generateContent({
             model: TEXT_MODEL,
-            contents: `Analyze for security leaks (PII, nuclear codes, treason). Text: "${text}". Return JSON {authorized, reason}`,
-            config: { responseMimeType: "application/json" }
+            contents: `Analyze for security leaks (PII, nuclear codes, treason). Text: "${text}".`,
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        authorized: { type: Type.BOOLEAN },
+                        reason: { type: Type.STRING }
+                    },
+                    required: ["authorized", "reason"]
+                }
+            }
         });
         return JSON.parse(response.text || '{"authorized": true}');
       } catch (e) {
@@ -167,10 +185,21 @@ export const GeminiService = {
             contents: {
                 parts: [
                     { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
-                    { text: "Analyze this image for tactical intelligence. Identify objects, hidden text, and potential threats. Output JSON: { \"threatLevel\": \"LOW\"|\"MEDIUM\"|\"HIGH\"|\"CRITICAL\", \"analysis\": \"Brief summary string\", \"details\": [\"List of identified objects/points\"] }" }
+                    { text: "Analyze this image for tactical intelligence. Identify objects, hidden text, and potential threats." }
                 ]
             },
-            config: { responseMimeType: "application/json" }
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        threatLevel: { type: Type.STRING, enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
+                        analysis: { type: Type.STRING },
+                        details: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    },
+                    required: ["threatLevel", "analysis", "details"]
+                }
+            }
         });
         return JSON.parse(response.text || '{}');
     } catch (e) {
@@ -202,16 +231,31 @@ export const GeminiService = {
                 4. WHITEBOARD (for drawing, sketching)
                 5. PRESENTATION (for making slides)
                 6. FORM (for data collection)
-                
-                Return JSON structure matching:
-                {
-                    "appType": "CAMERA" | "RECORDER" | "NOTEBOOK" | "WHITEBOARD" | "PRESENTATION" | "FORM",
-                    "title": "A short, cool title for the tool",
-                    "description": "Short description of what it does",
-                    "formFields": [ { "label": "string", "key": "string", "type": "text"|"number"|"checkbox" } ] (ONLY if appType is FORM)
-                }
               `,
-              config: { responseMimeType: "application/json" }
+              config: { 
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                      type: Type.OBJECT,
+                      properties: {
+                          appType: { type: Type.STRING, enum: ['CAMERA', 'RECORDER', 'NOTEBOOK', 'WHITEBOARD', 'PRESENTATION', 'FORM'] },
+                          title: { type: Type.STRING },
+                          description: { type: Type.STRING },
+                          formFields: {
+                              type: Type.ARRAY,
+                              items: {
+                                  type: Type.OBJECT,
+                                  properties: {
+                                      label: { type: Type.STRING },
+                                      key: { type: Type.STRING },
+                                      type: { type: Type.STRING, enum: ['text', 'number', 'checkbox'] }
+                                  },
+                                  required: ['label', 'key', 'type']
+                              }
+                          }
+                      },
+                      required: ['appType', 'title', 'description']
+                  }
+              }
           });
           return JSON.parse(response.text || 'null');
       } catch (e) {
