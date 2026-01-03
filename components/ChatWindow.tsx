@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatSession, User, Message, MessagePriority } from '../types';
-import { Send, Smile, Paperclip, MoreVertical, Search, ShieldCheck, Languages, BrainCircuit, Globe, Mic, AlertTriangle, Clock, Grid, Lock, UserX, UserMinus, UserPlus, Trash2 } from 'lucide-react';
+import { Send, Smile, Paperclip, MoreVertical, Search, ShieldCheck, Languages, BrainCircuit, Globe, Mic, AlertTriangle, Clock, Grid, Lock, UserX, UserMinus, UserPlus, Trash2, Wand2, ScanEye, X, Sparkles, Loader } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
+import { MiniAppRenderer } from './MiniAppRenderer';
 
 interface ChatWindowProps {
   chat: ChatSession;
   currentUser: User;
   onSendMessage: (chatId: string, content: string, type: 'text' | 'image' | 'mini-app', priority: MessagePriority, miniAppData?: any) => void;
   onReactToMessage: (chatId: string, messageId: string, emoji: string) => void;
+  onUpdateMessage?: (chatId: string, messageId: string, updates: Partial<Message>) => void;
   onBack: () => void;
   toggleInfoPanel: () => void;
   onOpenTerminal?: () => void;
@@ -17,18 +19,21 @@ interface ChatWindowProps {
   onLaunchMeeting?: () => void;
 }
 
-export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSendMessage, onReactToMessage, onBack, toggleInfoPanel, onOpenTerminal, onBlockUser, onAddUser, onRemoveUser, onLaunchMeeting }) => {
+export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSendMessage, onReactToMessage, onUpdateMessage, onBack, toggleInfoPanel, onOpenTerminal, onBlockUser, onAddUser, onRemoveUser, onLaunchMeeting }) => {
   const [inputValue, setInputValue] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
   const [smartReplies, setSmartReplies] = useState<string[]>([]);
   const [priorityMode, setPriorityMode] = useState<MessagePriority>('NORMAL');
-  const [isTimeLocked, setIsTimeLocked] = useState(false);
   const [showMiniAppMenu, setShowMiniAppMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [showAdminMenu, setShowAdminMenu] = useState(false);
+  const [isRewriting, setIsRewriting] = useState(false);
+  const [analyzingImageId, setAnalyzingImageId] = useState<string | null>(null);
+  const [isGeneratingApp, setIsGeneratingApp] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isGroup = chat.isGroup;
   const partner = !isGroup ? chat.participants.find(p => p.id !== currentUser.id) : null;
@@ -69,6 +74,33 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
         return;
     }
 
+    // Check for App Generation Command
+    if (trimmedInput.startsWith('/genapp ') || trimmedInput.startsWith('/tool ')) {
+        const description = trimmedInput.replace(/^\/(genapp|tool)\s+/, '');
+        if (description.length > 0) {
+            setInputValue(''); // Clear input
+            setIsGeneratingApp(true);
+            try {
+                const config = await GeminiService.generateMiniAppConfig(description);
+                if (config) {
+                    onSendMessage(chat.id, "Generated Tool", 'mini-app', 'NORMAL', {
+                        type: 'GENERATED_APP',
+                        title: config.title,
+                        config: config
+                    });
+                } else {
+                    alert("AI could not generate a valid tool from that description.");
+                }
+            } catch (e) {
+                console.error("Generation failed", e);
+                alert("Tool generation failed.");
+            } finally {
+                setIsGeneratingApp(false);
+            }
+            return;
+        }
+    }
+
     if (priorityMode === 'CRITICAL') {
         const securityCheck = await GeminiService.analyzeSecurityRisk(trimmedInput);
         if (!securityCheck.authorized) {
@@ -79,7 +111,45 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
     onSendMessage(chat.id, trimmedInput, 'text', priorityMode);
     setInputValue('');
     setPriorityMode('NORMAL');
-    setIsTimeLocked(false);
+  };
+
+  const handleRewrite = async (tone: 'DIPLOMATIC' | 'URGENT' | 'ENCRYPTED') => {
+      if (!inputValue.trim()) return;
+      setIsRewriting(true);
+      const refined = await GeminiService.refineDraft(inputValue, tone);
+      setInputValue(refined);
+      setIsRewriting(false);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+          const base64 = reader.result as string;
+          onSendMessage(chat.id, base64, 'image', priorityMode);
+      };
+      reader.readAsDataURL(file);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAnalyzeImage = async (msg: Message) => {
+      if (!onUpdateMessage) return;
+      setAnalyzingImageId(msg.id);
+      // Extract pure base64 if it's a data URL
+      const base64Data = msg.content.split(',')[1] || msg.content;
+      const result = await GeminiService.analyzeImageIntel(base64Data);
+      
+      onUpdateMessage(chat.id, msg.id, { 
+          imageAnalysis: {
+              threatLevel: result.threatLevel,
+              analysis: result.analysis,
+              details: result.details
+          }
+      });
+      setAnalyzingImageId(null);
   };
 
   const handleSendMiniApp = (type: 'POLL' | 'VOTE') => {
@@ -91,6 +161,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
       });
       setShowMiniAppMenu(false);
   }
+
+  const handleCreateAIApp = async () => {
+      const prompt = window.prompt("Describe the temporary tool you need (e.g., 'A voice recorder', 'A photo evidence cam', 'A presentation maker'):");
+      if (!prompt) return;
+
+      setIsGeneratingApp(true);
+      const config = await GeminiService.generateMiniAppConfig(prompt);
+      setIsGeneratingApp(false);
+
+      if (config) {
+          onSendMessage(chat.id, "Generated Tool", 'mini-app', 'NORMAL', {
+              type: 'GENERATED_APP',
+              title: config.title,
+              config: config
+          });
+          setShowMiniAppMenu(false);
+      } else {
+          alert("Failed to generate app. Please try a different description.");
+      }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -200,6 +290,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                 const sender = chat.participants.find(p => p.id === msg.senderId) || currentUser;
                 const showHeader = isGroup && !isMe && (index === 0 || chat.messages[index - 1].senderId !== msg.senderId);
                 const isCritical = msg.priority === 'CRITICAL' || msg.priority === 'EMERGENCY_BROADCAST';
+                const hasAnalysis = !!msg.imageAnalysis;
 
                 return (
                     <div key={msg.id} className={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
@@ -222,20 +313,67 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                                 </div>
                             )}
                             
-                            <div className="whitespace-pre-wrap leading-relaxed">
-                                {msg.type === 'mini-app' && msg.miniAppData ? (
-                                    <div className="bg-slate-800/50 rounded p-3 border border-slate-700 my-1">
-                                        <div className="flex items-center gap-2 mb-2 text-cyan-400 font-bold">
-                                            <Grid size={16} /> {msg.miniAppData.title}
-                                        </div>
-                                        <div className="space-y-2">
-                                            {msg.miniAppData.options?.map(opt => (
-                                                <button key={opt} className="w-full text-left bg-slate-700/50 hover:bg-slate-700 p-2 rounded text-xs transition">
-                                                    {opt}
-                                                </button>
-                                            ))}
-                                        </div>
+                            <div className="whitespace-pre-wrap leading-relaxed w-full">
+                                {msg.type === 'image' ? (
+                                    <div className="relative group/image">
+                                        <img src={msg.content} alt="Upload" className="rounded-lg max-w-full max-h-80 object-cover border border-slate-700" />
+                                        
+                                        {!hasAnalysis && !analyzingImageId && (
+                                            <button 
+                                                onClick={() => handleAnalyzeImage(msg)}
+                                                className="absolute bottom-2 right-2 bg-slate-900/80 hover:bg-emerald-600 text-white p-2 rounded-full backdrop-blur transition border border-white/20"
+                                                title="Run Intel Scan"
+                                            >
+                                                <ScanEye size={16} />
+                                            </button>
+                                        )}
+                                        {analyzingImageId === msg.id && (
+                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                                                <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                                            </div>
+                                        )}
+                                        {hasAnalysis && (
+                                            <div className="absolute inset-0 bg-slate-900/90 rounded-lg p-3 text-xs overflow-y-auto animate-fade-in border border-emerald-500/50">
+                                                <div className="flex justify-between items-start mb-2 border-b border-emerald-500/30 pb-2">
+                                                    <span className="font-bold text-emerald-400 flex items-center gap-1"><ShieldCheck size={12}/> INTEL REPORT</span>
+                                                    <button onClick={() => onUpdateMessage && onUpdateMessage(chat.id, msg.id, { imageAnalysis: undefined })}><X size={12}/></button>
+                                                </div>
+                                                <div className="space-y-1 font-mono">
+                                                    <div className={`font-bold ${
+                                                        msg.imageAnalysis!.threatLevel === 'CRITICAL' ? 'text-red-500 animate-pulse' : 
+                                                        msg.imageAnalysis!.threatLevel === 'HIGH' ? 'text-orange-500' : 'text-green-400'
+                                                    }`}>
+                                                        THREAT: {msg.imageAnalysis!.threatLevel}
+                                                    </div>
+                                                    <p className="text-slate-300 italic">{msg.imageAnalysis!.analysis}</p>
+                                                    <div className="mt-2 text-cyan-400">
+                                                        {msg.imageAnalysis!.details.map((d, i) => <div key={i}>• {d}</div>)}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
+                                ) : msg.type === 'mini-app' && msg.miniAppData ? (
+                                    <>
+                                        {msg.miniAppData.type === 'GENERATED_APP' && msg.miniAppData.config ? (
+                                            <div className="w-full min-w-[300px]">
+                                                <MiniAppRenderer config={msg.miniAppData.config} />
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-800/50 rounded p-3 border border-slate-700 my-1">
+                                                <div className="flex items-center gap-2 mb-2 text-cyan-400 font-bold">
+                                                    <Grid size={16} /> {msg.miniAppData.title}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {msg.miniAppData.options?.map(opt => (
+                                                        <button key={opt} className="w-full text-left bg-slate-700/50 hover:bg-slate-700 p-2 rounded text-xs transition">
+                                                            {opt}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 ) : translatedMessages[msg.id] ? (
                                     <div className="animate-fade-in">
                                         <div className="flex items-center gap-1 text-xs text-cyan-400 mb-1 border-b border-white/10 pb-1">
@@ -296,11 +434,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                  <button 
                     onClick={() => setShowMiniAppMenu(!showMiniAppMenu)} 
                     className="text-slate-400 p-2 hover:bg-slate-700 rounded-full transition relative"
+                    title="Apps & Tools"
                 >
                     <Grid size={24} />
                     {showMiniAppMenu && (
-                        <div className="absolute bottom-12 left-0 bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-48 overflow-hidden z-50">
-                            <div className="p-2 text-xs text-slate-500 uppercase font-bold">Mini Apps</div>
+                        <div className="absolute bottom-12 left-0 bg-slate-800 border border-slate-700 rounded-lg shadow-xl w-56 overflow-hidden z-50 animate-fade-in">
+                            <div className="p-2 text-xs text-slate-500 uppercase font-bold bg-slate-900/50">Mini Apps</div>
+                            
+                            <div onClick={() => handleCreateAIApp()} className="p-3 hover:bg-emerald-900/20 hover:text-emerald-400 text-left text-sm text-slate-200 cursor-pointer flex items-center gap-2 border-b border-slate-700">
+                                {isGeneratingApp ? <Loader size={14} className="animate-spin"/> : <Sparkles size={14} className="text-emerald-400" />} 
+                                {isGeneratingApp ? "Generating..." : "Create AI Tool"}
+                            </div>
+
                             <div onClick={() => handleSendMiniApp('VOTE')} className="p-3 hover:bg-slate-700 text-left text-sm text-slate-200 cursor-pointer flex items-center gap-2">
                                 <ShieldCheck size={14} /> Official Vote
                             </div>
@@ -310,17 +455,59 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                         </div>
                     )}
                  </button>
+                 <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                 />
+                 <button 
+                    onClick={() => fileInputRef.current?.click()} 
+                    className="text-slate-400 p-2 hover:bg-slate-700 rounded-full transition"
+                    title="Upload Intel Image"
+                 >
+                     <Paperclip size={24} />
+                 </button>
              </div>
              
-             <div className="flex-1 bg-[#2a3942] rounded-lg flex flex-col relative">
+             <div className="flex-1 bg-[#2a3942] rounded-lg flex flex-col relative group/input">
                 <textarea
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={priorityMode === 'CRITICAL' ? "Type EMERGENCY message..." : "Type a message..."}
-                    className="w-full bg-transparent text-slate-200 p-3 min-h-[44px] max-h-[120px] outline-none resize-none custom-scrollbar"
+                    placeholder={priorityMode === 'CRITICAL' ? "Type EMERGENCY message..." : isRewriting ? "AI Rewriting..." : "Type a message or /genapp..."}
+                    className={`w-full bg-transparent text-slate-200 p-3 min-h-[44px] max-h-[120px] outline-none resize-none custom-scrollbar ${isRewriting ? 'opacity-50' : ''}`}
                     rows={1}
+                    disabled={isRewriting}
                 />
+                
+                {/* AI Rewrite Tools */}
+                {inputValue.length > 3 && (
+                    <div className="absolute right-2 bottom-2 flex gap-1 opacity-0 group-hover/input:opacity-100 transition-opacity">
+                         <button 
+                            onClick={() => handleRewrite('DIPLOMATIC')}
+                            className="p-1.5 bg-slate-700 rounded-full text-emerald-400 hover:bg-emerald-900/50 hover:text-white transition"
+                            title="Rewrite: Diplomatic"
+                         >
+                             <Wand2 size={14}/>
+                         </button>
+                         <button 
+                            onClick={() => handleRewrite('URGENT')}
+                            className="p-1.5 bg-slate-700 rounded-full text-red-400 hover:bg-red-900/50 hover:text-white transition"
+                            title="Rewrite: Urgent Command"
+                         >
+                             <AlertTriangle size={14}/>
+                         </button>
+                         <button 
+                            onClick={() => handleRewrite('ENCRYPTED')}
+                            className="p-1.5 bg-slate-700 rounded-full text-cyan-400 hover:bg-cyan-900/50 hover:text-white transition"
+                            title="Rewrite: Encrypted Jargon"
+                         >
+                             <Lock size={14}/>
+                         </button>
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center gap-1">

@@ -18,12 +18,20 @@ export interface User {
   blockedUsers?: string[]; // List of user IDs blocked by this user
 }
 
+export interface MiniAppConfig {
+  appType: 'CAMERA' | 'RECORDER' | 'NOTEBOOK' | 'WHITEBOARD' | 'PRESENTATION' | 'FORM';
+  title: string;
+  description: string;
+  formFields?: { label: string; key: string; type: 'text' | 'number' | 'checkbox' }[];
+}
+
 export interface MiniAppData {
-  type: 'POLL' | 'VOTE' | 'RESOURCE_REQ';
+  type: 'POLL' | 'VOTE' | 'RESOURCE_REQ' | 'GENERATED_APP';
   title: string;
   options?: string[];
   votes?: Record<string, number>;
   status?: 'OPEN' | 'CLOSED';
+  config?: MiniAppConfig;
 }
 
 export interface Reaction {
@@ -47,6 +55,11 @@ export interface Message {
   isTimeLocked?: boolean;
   unlockTime?: number;
   reactions?: Record<string, string[]>; // emoji -> [userIds]
+  imageAnalysis?: {
+    threatLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    analysis: string;
+    details: string[];
+  };
 }
 
 export interface ChatSession {

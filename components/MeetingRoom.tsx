@@ -3,7 +3,7 @@ import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users } from 'lu
 import { User } from '../types';
 
 interface MeetingRoomProps {
-  onLeave: () => void;
+  onLeave: (transcript?: string) => void;
   currentUser: User;
 }
 
@@ -37,6 +37,11 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ onLeave, currentUser }
         recognition?.start();
     }
     setMicOn(!micOn);
+  };
+
+  const handleLeave = () => {
+      const fullTranscript = transcripts.map(t => `${t.user}: ${t.text}`).join('\n');
+      onLeave(fullTranscript);
   };
 
   return (
@@ -99,7 +104,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ onLeave, currentUser }
             <button onClick={() => setCameraOn(!cameraOn)} className={`p-4 rounded-full transition ${cameraOn ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-900 hover:bg-red-800'}`}>
                 {cameraOn ? <Video/> : <VideoOff/>}
             </button>
-            <button onClick={onLeave} className="p-4 rounded-full bg-red-600 hover:bg-red-500 px-8">
+            <button onClick={handleLeave} className="p-4 rounded-full bg-red-600 hover:bg-red-500 px-8">
                 <PhoneOff/>
             </button>
         </div>

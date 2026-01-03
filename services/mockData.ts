@@ -35,6 +35,18 @@ export const CONTACTS: User[] = [];
 
 export const ADMIN_CHANNELS: ChatSession[] = [
   {
+    id: 'c_broadcasts',
+    participants: [],
+    messages: [{ id: 'm_br_1', senderId: 'system_admin', content: 'GLOBAL SIGMAX ALLIANCE BROADCAST SYSTEM ONLINE.', timestamp: Date.now(), type: 'system', priority: 'NORMAL' }],
+    lastMessageTimestamp: Date.now(),
+    unreadCount: 0,
+    isGroup: true,
+    name: "ALLIANCE BROADCASTS",
+    type: 'BROADCAST_CHANNEL',
+    encryptionLevel: 'STANDARD',
+    adminOnly: false // Visible to all, write-only for admins
+  },
+  {
     id: 'admin_sir',
     participants: [],
     messages: [{ id: 'm_sys_1', senderId: 'system_admin', content: 'WELCOME TO ADMINS.S.I.R CHANNEL. AUTHORIZED PERSONNEL ONLY.', timestamp: Date.now(), type: 'system', priority: 'CRITICAL' }],
@@ -84,10 +96,10 @@ export const ADMIN_CHANNELS: ChatSession[] = [
   }
 ];
 
-// Removed Li Wei and Global Alerts. Only Admin channels remain initially.
+// Placeholder, will be replaced by Storage
 export const INITIAL_CHATS: ChatSession[] = [
   ...ADMIN_CHANNELS
 ];
 
-// Placeholder, will be replaced by Storage
+// Placeholder
 export const CURRENT_USER = NEW_USER_TEMPLATE;

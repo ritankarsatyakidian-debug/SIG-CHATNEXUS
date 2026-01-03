@@ -5,9 +5,11 @@ import { RightPanel } from './components/RightPanel';
 import { Auth } from './components/Auth';
 import { Terminal } from './components/Terminal';
 import { MeetingRoom } from './components/MeetingRoom';
+import { CallInterface } from './components/CallInterface';
 import { ChatSession, Message, MessagePriority, User } from './types';
 import { INITIAL_CHATS, NEW_USER_TEMPLATE } from './services/mockData';
 import { StorageService } from './services/storage';
+import { GeminiService } from './services/gemini';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -19,6 +21,9 @@ const App: React.FC = () => {
   // Feature States
   const [showTerminal, setShowTerminal] = useState(false);
   const [showMeetingRoom, setShowMeetingRoom] = useState(false);
+  
+  // Call State
+  const [activeCall, setActiveCall] = useState<{partner: User, isVideo: boolean} | null>(null);
 
   // Helper to securely filter chats based on user role and permissions
   const filterChats = useCallback((allChats: ChatSession[], user: User | null) => {
@@ -26,6 +31,7 @@ const App: React.FC = () => {
     return allChats.filter(chat => {
       // Public/Direct chats are visible to participants (or everyone in this demo context if public)
       if (!chat.adminOnly) return true;
+      if (chat.id === 'c_broadcasts') return true; // Everyone sees broadcasts
       
       // Admin channels require explicit permission in the user's adminChannels list
       return user.adminChannels?.includes(chat.id);
@@ -108,6 +114,20 @@ const App: React.FC = () => {
     setChats(filterChats(updatedChats, currentUser));
   };
 
+  const handleUpdateMessage = (chatId: string, messageId: string, updates: Partial<Message>) => {
+      if (!currentUser) return;
+      const currentChats = StorageService.getChats();
+      const updatedChats = currentChats.map(chat => {
+          if (chat.id === chatId) {
+              const updatedMessages = chat.messages.map(m => m.id === messageId ? { ...m, ...updates } : m);
+              return { ...chat, messages: updatedMessages };
+          }
+          return chat;
+      });
+      StorageService.saveChats(updatedChats);
+      setChats(filterChats(updatedChats, currentUser));
+  };
+
   const handleReaction = (chatId: string, messageId: string, emoji: string) => {
     if (!currentUser) return;
     
@@ -168,6 +188,79 @@ const App: React.FC = () => {
       setActiveChatId(newChat.id);
   };
 
+  const handleMeetingEnd = async (transcript?: string) => {
+      setShowMeetingRoom(false);
+      if (transcript && currentUser) {
+          const summary = await GeminiService.summarizeMeeting(transcript);
+          
+          // Find or create a "Meeting Logs" chat
+          const currentChats = StorageService.getChats();
+          let logChat = currentChats.find(c => c.name === 'Meeting Logs');
+          
+          if (!logChat) {
+              logChat = {
+                  id: 'c_meetings',
+                  participants: [currentUser],
+                  messages: [],
+                  lastMessageTimestamp: Date.now(),
+                  unreadCount: 0,
+                  isGroup: true,
+                  name: 'Meeting Logs',
+                  type: 'GROUP',
+                  encryptionLevel: 'MILITARY_GRADE',
+                  adminOnly: false
+              };
+              currentChats.unshift(logChat);
+          }
+          
+          // Add summary message
+          const newMessage: Message = {
+            id: `m_summary_${Date.now()}`,
+            senderId: 'system_admin',
+            content: `**CONFERENCE SUMMARY**\n\n${summary}`,
+            timestamp: Date.now(),
+            type: 'text',
+            priority: 'NORMAL'
+          };
+          
+          const updatedChats = currentChats.map(c => {
+              if (c.id === logChat!.id) {
+                  return { ...c, messages: [...c.messages, newMessage], lastMessageTimestamp: Date.now() };
+              }
+              return c;
+          });
+          
+          StorageService.saveChats(updatedChats);
+          setChats(filterChats(updatedChats, currentUser));
+          setActiveChatId(logChat.id); // Navigate to logs
+      }
+  };
+
+  const handleStartCall = (userId: string, isVideo: boolean) => {
+      // Find the user object from existing chats
+      const currentChats = StorageService.getChats();
+      let partner: User | undefined;
+      
+      for(const chat of currentChats) {
+          const found = chat.participants.find(p => p.id === userId);
+          if(found) {
+              partner = found;
+              break;
+          }
+      }
+
+      if(partner) {
+          setActiveCall({ partner, isVideo });
+      } else {
+          alert("Contact not found.");
+      }
+  };
+
+  const handleBroadcast = (content: string) => {
+      if(!currentUser) return;
+      handleSendMessage('c_broadcasts', content, 'text', 'NORMAL');
+  };
+
   // --- Admin & Blocking Features ---
 
   const handleBlockUser = (userId: string) => {
@@ -215,12 +308,22 @@ const App: React.FC = () => {
 
   // --- View Rendering ---
 
+  if (activeCall) {
+      return (
+          <CallInterface 
+            partner={activeCall.partner} 
+            isVideo={activeCall.isVideo} 
+            onEndCall={() => setActiveCall(null)}
+          />
+      );
+  }
+
   if (showTerminal) {
       return <Terminal onClose={() => setShowTerminal(false)} currentUser={currentUser} />;
   }
 
   if (showMeetingRoom) {
-      return <MeetingRoom onLeave={() => setShowMeetingRoom(false)} currentUser={currentUser} />;
+      return <MeetingRoom onLeave={handleMeetingEnd} currentUser={currentUser} />;
   }
 
   const activeChat = chats.find(c => c.id === activeChatId) || null;
@@ -235,6 +338,8 @@ const App: React.FC = () => {
             onSelectChat={(id) => { setActiveChatId(id); setShowRightPanel(false); }}
             onCreateChat={handleCreateChat}
             onLaunchMeeting={() => setShowMeetingRoom(true)}
+            onStartCall={handleStartCall}
+            onBroadcast={handleBroadcast}
         />
       </div>
 
@@ -247,6 +352,7 @@ const App: React.FC = () => {
                         currentUser={currentUser}
                         onSendMessage={handleSendMessage}
                         onReactToMessage={handleReaction}
+                        onUpdateMessage={handleUpdateMessage}
                         onBack={() => setActiveChatId(null)}
                         toggleInfoPanel={() => setShowRightPanel(!showRightPanel)}
                         onOpenTerminal={() => setShowTerminal(true)}

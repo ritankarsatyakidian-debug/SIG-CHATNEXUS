@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChatSession, User } from '../types';
-import { MessageSquare, Settings, Phone, Radio, Lock, UserPlus, Menu, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MessageSquare, Settings, Phone, Radio, Lock, UserPlus, Menu, Search, ChevronLeft, ChevronRight, Video, Megaphone, Send } from 'lucide-react';
 
 interface SidebarProps {
   chats: ChatSession[];
@@ -9,14 +9,31 @@ interface SidebarProps {
   onSelectChat: (chatId: string) => void;
   onCreateChat: (phone: string, isGroup: boolean) => void;
   onLaunchMeeting: () => void;
+  onStartCall: (userId: string, isVideo: boolean) => void;
+  onBroadcast: (content: string) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChatId, onSelectChat, onCreateChat, onLaunchMeeting }) => {
-  const [activeTab, setActiveTab] = useState<'CHATS' | 'STATUS' | 'CALLS'>('CHATS');
+export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChatId, onSelectChat, onCreateChat, onLaunchMeeting, onStartCall, onBroadcast }) => {
+  const [activeTab, setActiveTab] = useState<'CHATS' | 'BROADCASTS' | 'CALLS'>('CHATS');
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [broadcastInput, setBroadcastInput] = useState('');
+
+  // Admin List for Broadcast Permissions
+  const AUTHORIZED_BROADCASTERS = ['SOUMYADEEPTA', 'IBHAN', 'RITANKAR', 'SAANVI', 'SATYAKI', 'DIAN'];
+  const canBroadcast = AUTHORIZED_BROADCASTERS.some(name => currentUser.name.toUpperCase().includes(name));
+  const broadcastChat = chats.find(c => c.id === 'c_broadcasts');
+
+  // Extract all unique users from chats for the call list
+  const allContacts = Array.from(new Set(
+      chats.flatMap(c => c.participants)
+           .filter(p => p.id !== currentUser.id && p.id !== 'system_admin')
+  )).map(id => {
+      // De-duplicate by ID roughly
+      return chats.flatMap(c => c.participants).find(p => p.id === id as unknown as string);
+  }).filter(Boolean) as User[];
 
   const getChatName = (chat: ChatSession) => {
     if (chat.isGroup) return chat.name;
@@ -53,6 +70,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChat
           }
       }
   };
+
+  const sendBroadcast = () => {
+      if(broadcastInput.trim()) {
+          onBroadcast(broadcastInput);
+          setBroadcastInput('');
+      }
+  }
 
   return (
     <div className={`flex flex-col border-r border-slate-700 bg-slate-900 h-full relative transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-full md:w-[400px]'}`}>
@@ -112,8 +136,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChat
             <MessageSquare size={16} /> {!isCollapsed && "Chats"}
         </button>
         <button 
-            onClick={() => setActiveTab('STATUS')}
-            className={`flex-1 py-3 text-sm font-medium transition flex justify-center items-center gap-2 ${activeTab === 'STATUS' ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+            onClick={() => setActiveTab('BROADCASTS')}
+            className={`flex-1 py-3 text-sm font-medium transition flex justify-center items-center gap-2 ${activeTab === 'BROADCASTS' ? 'text-emerald-400 border-b-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
              title="Broadcasts"
         >
             <Radio size={16} /> {!isCollapsed && "Broadcasts"}
@@ -128,8 +152,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChat
       </div>
 
       {/* List Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {activeTab === 'CHATS' && chats.map(chat => {
+      <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#111b21]">
+        
+        {/* CHATS TAB */}
+        {activeTab === 'CHATS' && chats.filter(c => c.id !== 'c_broadcasts').map(chat => {
           const isActive = activeChatId === chat.id;
           const isCritical = chat.messages[chat.messages.length - 1]?.priority === 'CRITICAL';
           return (
@@ -173,6 +199,77 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, currentUser, activeChat
             </div>
           );
         })}
+
+        {/* BROADCASTS TAB */}
+        {activeTab === 'BROADCASTS' && (
+            <div className="flex flex-col h-full">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {broadcastChat?.messages.map(msg => (
+                        <div key={msg.id} className="bg-slate-800 p-3 rounded-lg border-l-4 border-emerald-500 shadow-md">
+                            <div className="text-emerald-400 font-bold text-xs mb-1 flex items-center gap-1">
+                                <Megaphone size={12}/> OFFICIAL ANNOUNCEMENT
+                            </div>
+                            <p className="text-slate-200 text-sm">{msg.content}</p>
+                            <div className="text-[10px] text-slate-500 mt-2 text-right">
+                                {new Date(msg.timestamp).toLocaleString()}
+                            </div>
+                        </div>
+                    ))}
+                    {!broadcastChat && <div className="text-slate-500 text-center p-4">No broadcasts initialized.</div>}
+                </div>
+                
+                {canBroadcast && !isCollapsed && (
+                    <div className="p-3 bg-slate-800 border-t border-slate-700">
+                        <div className="flex gap-2">
+                            <input 
+                                className="flex-1 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white outline-none focus:border-emerald-500"
+                                placeholder="Type global broadcast..."
+                                value={broadcastInput}
+                                onChange={e => setBroadcastInput(e.target.value)}
+                            />
+                            <button onClick={sendBroadcast} className="bg-emerald-600 p-2 rounded text-white hover:bg-emerald-500">
+                                <Send size={18}/>
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
+
+        {/* CALLS TAB */}
+        {activeTab === 'CALLS' && (
+             <div className="p-2">
+                 {allContacts.length === 0 && <div className="text-slate-500 text-center p-4 text-sm">No contacts available to call.</div>}
+                 
+                 {allContacts.map(contact => (
+                     <div key={contact.id} className="flex items-center justify-between p-3 hover:bg-slate-800 rounded-lg transition mb-1 group">
+                         <div className="flex items-center gap-3">
+                             <img src={contact.avatar} className="w-10 h-10 rounded-full" />
+                             {!isCollapsed && (
+                                 <div>
+                                     <div className="text-slate-200 font-medium text-sm">{contact.name}</div>
+                                     <div className="text-slate-500 text-xs">{contact.role}</div>
+                                 </div>
+                             )}
+                         </div>
+                         {!isCollapsed && (
+                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
+                                 <button 
+                                    onClick={() => onStartCall(contact.id, false)}
+                                    className="p-2 bg-slate-700 rounded-full text-emerald-400 hover:bg-slate-600" title="Voice Call">
+                                     <Phone size={16}/>
+                                 </button>
+                                 <button 
+                                    onClick={() => onStartCall(contact.id, true)}
+                                    className="p-2 bg-slate-700 rounded-full text-emerald-400 hover:bg-slate-600" title="Video Call">
+                                     <Video size={16}/>
+                                 </button>
+                             </div>
+                         )}
+                     </div>
+                 ))}
+             </div>
+        )}
       </div>
 
       {/* New Chat Modal */}
