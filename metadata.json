@@ -1,0 +1,8 @@
+{
+  "name": "Sigmax Connect",
+  "description": "A hyper-advanced, secure communication platform for the Sigmax alliance nations. Features real-time AI translation, diplomatic tone analysis, and intelligence summarization.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}
