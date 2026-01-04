@@ -193,8 +193,8 @@ export const Terminal: React.FC<TerminalProps> = ({ onClose, currentUser }) => {
                               <h3 className="font-bold text-lg mb-2">{name}_OS</h3>
                               <p className="text-xs text-cyan-500/60">Status: <span className="text-emerald-400">ONLINE</span></p>
                               <div className="mt-4 text-[10px] bg-black/50 p-2 rounded font-mono text-slate-400">
-                                  > System.init()<br/>
-                                  > Module loaded...
+                                  {'>'} System.init()<br/>
+                                  {'>'} Module loaded...
                               </div>
                           </div>
                       ))}
@@ -292,15 +292,15 @@ export const Terminal: React.FC<TerminalProps> = ({ onClose, currentUser }) => {
                                       <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Cpu size={18}/> INVENTIONS LOG</h3>
                                       <div className="space-y-4 text-xs font-mono opacity-80">
                                           <div>
-                                              <span className="text-green-200 block">>> PROJECT: INFINITY GAUNTLET</span>
+                                              <span className="text-green-200 block">{'>>'} PROJECT: INFINITY GAUNTLET</span>
                                               <span className="opacity-50">Status: Classified. Requires 6 stones.</span>
                                           </div>
                                           <div>
-                                              <span className="text-green-200 block">>> PROJECT: SIGMAX CONNECT</span>
+                                              <span className="text-green-200 block">{'>>'} PROJECT: SIGMAX CONNECT</span>
                                               <span className="opacity-50">Status: Deployed. Encryption Stable.</span>
                                           </div>
                                           <div>
-                                              <span className="text-green-200 block">>> PROJECT: TIME DILATION</span>
+                                              <span className="text-green-200 block">{'>>'} PROJECT: TIME DILATION</span>
                                               <span className="opacity-50">Status: Theoretical Phase.</span>
                                           </div>
                                       </div>
