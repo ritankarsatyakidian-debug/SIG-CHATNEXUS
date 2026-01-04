@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatSession, User, Message, MessagePriority } from '../types';
-import { Send, Smile, Paperclip, MoreVertical, Search, ShieldCheck, Languages, BrainCircuit, Globe, Mic, AlertTriangle, Clock, Grid, Lock, UserX, UserMinus, UserPlus, Trash2, Wand2, ScanEye, X, Sparkles, Loader } from 'lucide-react';
+import { Send, Smile, Paperclip, MoreVertical, Search, ShieldCheck, Languages, BrainCircuit, Globe, Mic, AlertTriangle, Clock, Grid, Lock, UserX, UserMinus, UserPlus, Trash2, Wand2, ScanEye, X, Sparkles, Loader, Ghost, EyeOff } from 'lucide-react';
 import { GeminiService } from '../services/gemini';
 import { MiniAppRenderer } from './MiniAppRenderer';
+import { QuantumText } from './QuantumText';
 
 interface ChatWindowProps {
   chat: ChatSession;
   currentUser: User;
-  onSendMessage: (chatId: string, content: string, type: 'text' | 'image' | 'mini-app', priority: MessagePriority, miniAppData?: any) => void;
+  onSendMessage: (chatId: string, content: string, type: 'text' | 'image' | 'mini-app', priority: MessagePriority, miniAppData?: any, isEphemeral?: boolean) => void;
   onReactToMessage: (chatId: string, messageId: string, emoji: string) => void;
   onUpdateMessage?: (chatId: string, messageId: string, updates: Partial<Message>) => void;
   onBack: () => void;
@@ -25,12 +26,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
   const [translatedMessages, setTranslatedMessages] = useState<Record<string, string>>({});
   const [smartReplies, setSmartReplies] = useState<string[]>([]);
   const [priorityMode, setPriorityMode] = useState<MessagePriority>('NORMAL');
+  const [isStealthMode, setIsStealthMode] = useState(false); // Ghost Mode State
   const [showMiniAppMenu, setShowMiniAppMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [isRewriting, setIsRewriting] = useState(false);
   const [analyzingImageId, setAnalyzingImageId] = useState<string | null>(null);
   const [isGeneratingApp, setIsGeneratingApp] = useState(false);
+  const [now, setNow] = useState(Date.now()); // For ephemeral timers
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,12 +43,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
   const chatName = isGroup ? chat.name : partner?.name;
   const chatAvatar = isGroup ? `https://picsum.photos/seed/${chat.id}/200/200` : partner?.avatar;
   const isAdmin = currentUser.role === 'ADMIN' || currentUser.adminChannels?.includes(chat.id);
+  const isQuantum = chat.encryptionLevel === 'QUANTUM_SECURE';
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [chat.messages]);
+  }, [chat.messages, now]);
 
   useEffect(() => {
     if (chat.messages.length > 0) {
@@ -108,9 +117,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
             return;
         }
     }
-    onSendMessage(chat.id, trimmedInput, 'text', priorityMode);
+    
+    // Send Message
+    onSendMessage(chat.id, trimmedInput, 'text', priorityMode, undefined, isStealthMode);
     setInputValue('');
     setPriorityMode('NORMAL');
+    // Don't disable stealth mode automatically, keep it sticky
   };
 
   const handleRewrite = async (tone: 'DIPLOMATIC' | 'URGENT' | 'ENCRYPTED') => {
@@ -128,17 +140,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
       const reader = new FileReader();
       reader.onloadend = () => {
           const base64 = reader.result as string;
-          onSendMessage(chat.id, base64, 'image', priorityMode);
+          onSendMessage(chat.id, base64, 'image', priorityMode, undefined, isStealthMode);
       };
       reader.readAsDataURL(file);
-      // Reset input
       if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleAnalyzeImage = async (msg: Message) => {
       if (!onUpdateMessage) return;
       setAnalyzingImageId(msg.id);
-      // Extract pure base64 if it's a data URL
       const base64Data = msg.content.split(',')[1] || msg.content;
       const result = await GeminiService.analyzeImageIntel(base64Data);
       
@@ -158,7 +168,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
           title: type === 'VOTE' ? 'Strategic Council Vote' : 'Quick Poll',
           options: ['Option A', 'Option B'],
           votes: {}
-      });
+      }, isStealthMode);
       setShowMiniAppMenu(false);
   }
 
@@ -175,7 +185,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
               type: 'GENERATED_APP',
               title: config.title,
               config: config
-          });
+          }, isStealthMode);
           setShowMiniAppMenu(false);
       } else {
           alert("Failed to generate app. Please try a different description.");
@@ -215,13 +225,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
         <div className="h-16 bg-slate-800 px-4 py-2 flex items-center justify-between shadow-md shrink-0 z-10 border-b border-slate-700">
             <div className="flex items-center gap-4 cursor-pointer" onClick={toggleInfoPanel}>
                 <button onClick={(e) => { e.stopPropagation(); onBack(); }} className="md:hidden text-slate-300">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    <X size={24} />
                 </button>
                 <img src={chatAvatar} alt="Profile" className="w-10 h-10 rounded-full object-cover" />
                 <div>
                     <h2 className="text-slate-200 font-semibold flex items-center gap-2">
                         {chatName}
-                        {chat.encryptionLevel === 'QUANTUM_SECURE' && <Lock size={12} className="text-emerald-400" />}
+                        {isQuantum && <Lock size={12} className="text-emerald-400" />}
                         {chat.adminOnly && <ShieldCheck size={14} className="text-red-500" />}
                     </h2>
                     <p className="text-slate-400 text-xs">
@@ -276,7 +286,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
 
         {/* Chat Area */}
         <div 
-            className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8"
+            className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8 relative"
             style={{ 
                 backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
                 backgroundRepeat: 'repeat',
@@ -285,6 +295,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                 backgroundColor: '#0b141a'
             }}
         >
+            {/* Stealth Mode Overlay Effect */}
+            {isStealthMode && (
+                <div className="absolute inset-0 bg-slate-900/10 pointer-events-none z-0 border-[4px] border-slate-700/50"></div>
+            )}
+
             {chat.messages.filter(m => !currentUser.blockedUsers?.includes(m.senderId)).map((msg, index) => {
                 const isMe = msg.senderId === currentUser.id;
                 const sender = chat.participants.find(p => p.id === msg.senderId) || currentUser;
@@ -292,12 +307,26 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                 const isCritical = msg.priority === 'CRITICAL' || msg.priority === 'EMERGENCY_BROADCAST';
                 const hasAnalysis = !!msg.imageAnalysis;
 
+                // Ephemeral Logic
+                let timeLeft = 0;
+                if (msg.isEphemeral && msg.expiresAt) {
+                    timeLeft = Math.max(0, Math.ceil((msg.expiresAt - now) / 1000));
+                    if (timeLeft === 0) return null; // Don't render expired messages
+                }
+
                 return (
-                    <div key={msg.id} className={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
+                    <div key={msg.id} className={`flex mb-3 ${isMe ? 'justify-end' : 'justify-start'} group relative z-10`}>
                         <div className={`max-w-[85%] md:max-w-[65%] rounded-lg p-2 px-3 shadow-sm relative text-sm 
                             ${isMe ? 'bg-[#005c4b] text-white rounded-tr-none' : 'bg-[#202c33] text-slate-200 rounded-tl-none'}
                             ${isCritical ? 'border-2 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : ''}
+                            ${msg.isEphemeral ? 'border border-slate-500/50 opacity-90' : ''}
                         `}>
+                            {msg.isEphemeral && (
+                                <div className="absolute -top-3 right-0 bg-slate-700 text-slate-300 text-[9px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <Clock size={8}/> {timeLeft}s
+                                </div>
+                            )}
+
                             {isCritical && (
                                 <div className="bg-red-500/20 -mx-3 -mt-2 mb-2 px-3 py-1 rounded-t text-red-300 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
                                     <AlertTriangle size={10} /> {msg.priority} MESSAGE
@@ -316,7 +345,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                             <div className="whitespace-pre-wrap leading-relaxed w-full">
                                 {msg.type === 'image' ? (
                                     <div className="relative group/image">
-                                        <img src={msg.content} alt="Upload" className="rounded-lg max-w-full max-h-80 object-cover border border-slate-700" />
+                                        <img src={msg.content} alt="Upload" className={`rounded-lg max-w-full max-h-80 object-cover border border-slate-700 ${msg.isEphemeral ? 'blur-sm hover:blur-none transition' : ''}`} />
                                         
                                         {!hasAnalysis && !analyzingImageId && (
                                             <button 
@@ -382,7 +411,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                                         {translatedMessages[msg.id]}
                                     </div>
                                 ) : (
-                                    msg.content
+                                    isQuantum ? <QuantumText text={msg.content} /> : msg.content
                                 )}
                             </div>
 
@@ -429,7 +458,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
         </div>
 
         {/* Input Area */}
-        <div className={`bg-[#202c33] px-4 py-3 flex items-end gap-2 shrink-0 ${priorityMode === 'CRITICAL' ? 'border-t-2 border-red-500' : ''}`}>
+        <div className={`bg-[#202c33] px-4 py-3 flex items-end gap-2 shrink-0 ${priorityMode === 'CRITICAL' ? 'border-t-2 border-red-500' : ''} ${isStealthMode ? 'border-t-2 border-slate-600' : ''}`}>
              <div className="flex flex-col gap-1">
                  <button 
                     onClick={() => setShowMiniAppMenu(!showMiniAppMenu)} 
@@ -476,7 +505,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={priorityMode === 'CRITICAL' ? "Type EMERGENCY message..." : isRewriting ? "AI Rewriting..." : "Type a message or /genapp..."}
+                    placeholder={priorityMode === 'CRITICAL' ? "Type EMERGENCY message..." : isStealthMode ? "Type GHOST message (destruct 10s)..." : isRewriting ? "AI Rewriting..." : "Type a message or /genapp..."}
                     className={`w-full bg-transparent text-slate-200 p-3 min-h-[44px] max-h-[120px] outline-none resize-none custom-scrollbar ${isRewriting ? 'opacity-50' : ''}`}
                     rows={1}
                     disabled={isRewriting}
@@ -511,6 +540,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat, currentUser, onSen
             </div>
 
             <div className="flex items-center gap-1">
+                 {/* Stealth Toggle */}
+                 <button 
+                    onClick={() => setIsStealthMode(!isStealthMode)}
+                    className={`p-2 rounded-full transition ${isStealthMode ? 'text-slate-300 bg-slate-600' : 'text-slate-400 hover:bg-slate-700'}`}
+                    title="Ghost Mode (10s Self-Destruct)"
+                >
+                    {isStealthMode ? <Ghost size={20} /> : <EyeOff size={20} />}
+                </button>
+
                  <button 
                     onClick={() => setPriorityMode(prev => prev === 'NORMAL' ? 'CRITICAL' : 'NORMAL')}
                     className={`p-2 rounded-full transition ${priorityMode === 'CRITICAL' ? 'text-red-500 bg-red-900/20' : 'text-slate-400 hover:bg-slate-700'}`}

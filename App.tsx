@@ -6,6 +6,7 @@ import { Auth } from './components/Auth';
 import { Terminal } from './components/Terminal';
 import { MeetingRoom } from './components/MeetingRoom';
 import { CallInterface } from './components/CallInterface';
+import { BootSequence } from './components/BootSequence';
 import { ChatSession, Message, MessagePriority, User } from './types';
 import { INITIAL_CHATS, NEW_USER_TEMPLATE } from './services/mockData';
 import { StorageService } from './services/storage';
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [bootComplete, setBootComplete] = useState(false);
   
   // Feature States
   const [showTerminal, setShowTerminal] = useState(false);
@@ -78,7 +80,7 @@ const App: React.FC = () => {
     setChats(filterChats(allChats, user));
   };
 
-  const handleSendMessage = (chatId: string, content: string, type: 'text' | 'image' | 'mini-app' = 'text', priority: MessagePriority = 'NORMAL', miniAppData?: any) => {
+  const handleSendMessage = (chatId: string, content: string, type: 'text' | 'image' | 'mini-app' = 'text', priority: MessagePriority = 'NORMAL', miniAppData?: any, isEphemeral?: boolean) => {
     if (!currentUser) return;
 
     const currentChats = StorageService.getChats(); // Get latest from storage to avoid conflicts
@@ -94,7 +96,9 @@ const App: React.FC = () => {
       priority,
       originCountry: currentUser.country,
       destCountry: dest,
-      miniAppData
+      miniAppData,
+      isEphemeral,
+      expiresAt: isEphemeral ? Date.now() + 10000 : undefined // 10s expiration
     };
 
     const updatedChats = currentChats.map(chat => {
@@ -301,6 +305,10 @@ const App: React.FC = () => {
       StorageService.saveChats(updatedChats);
       setChats(filterChats(updatedChats, currentUser));
   };
+
+  if (!bootComplete) {
+      return <BootSequence onComplete={() => setBootComplete(true)} />;
+  }
 
   if (!currentUser) {
     return <Auth onLogin={handleLogin} />;

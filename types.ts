@@ -1,3 +1,4 @@
+
 export type UserRole = 'CITIZEN' | 'OFFICIAL' | 'DIPLOMAT' | 'COUNCIL' | 'INTEL_OPS' | 'ADMIN';
 export type SecurityLevel = 1 | 2 | 3 | 4 | 5; // 5 is highest
 export type MessagePriority = 'NORMAL' | 'HIGH' | 'CRITICAL' | 'EMERGENCY_BROADCAST';
@@ -54,6 +55,8 @@ export interface Message {
   destCountry?: string;
   isTimeLocked?: boolean;
   unlockTime?: number;
+  isEphemeral?: boolean; // New: For Stealth Mode
+  expiresAt?: number; // New: Timestamp when message self-destructs
   reactions?: Record<string, string[]>; // emoji -> [userIds]
   imageAnalysis?: {
     threatLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
